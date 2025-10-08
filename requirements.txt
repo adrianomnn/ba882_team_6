@@ -1,0 +1,9 @@
+google-api-python-client
+python-dotenv
+pandas
+requests
+sqlalchemy
+pyyaml
+jupyter
+google-cloud-bigquery
+apache-airflow
