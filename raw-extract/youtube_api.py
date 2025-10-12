@@ -1,164 +1,224 @@
+"""
+YouTube API wrapper functions
+Place this file in raw-extract/ folder
+"""
+
 import os
-import requests
 import pandas as pd
-from dotenv import load_dotenv
+from googleapiclient.discovery import build
+from datetime import datetime
 
-load_dotenv()
+# Global variable to cache the YouTube client
+_youtube_client = None
 
-API_KEY = os.getenv("YOUTUBE_API_KEY")
 
-if not API_KEY:
-    raise ValueError("YouTube API key not found in .env file!")
+def get_youtube_client():
+    """
+    Lazy initialization of YouTube API client.
+    Only creates client when first called, not at import time.
+    """
+    global _youtube_client
+    
+    if _youtube_client is None:
+        API_KEY = os.environ.get('YOUTUBE_API_KEY')
+        if not API_KEY:
+            raise ValueError("YOUTUBE_API_KEY environment variable not set!")
+        
+        _youtube_client = build('youtube', 'v3', developerKey=API_KEY)
+        print("YouTube API client initialized")
+    
+    return _youtube_client
 
-BASE_URL = "https://www.googleapis.com/youtube/v3"
+
+def get_video(query, max_results=50, order='relevance'):
+    """
+    Search for videos by keyword.
+    Returns DataFrame with video metadata.
+    """
+    try:
+        youtube = get_youtube_client()
+        response = youtube.search().list(
+            q=query,
+            part='id,snippet',
+            maxResults=min(max_results, 50),
+            type='video',
+            order='date'
+        ).execute()
+
+        videos = []
+        for item in response.get('items', []):
+            snippet = item['snippet']
+            videos.append({
+                'video_id': item['id']['videoId'],
+                'channel_id': snippet['channelId'],
+                'title': snippet['title'],
+                'description': snippet['description'],
+                'published_at': snippet['publishedAt'],
+                'channel_title': snippet['channelTitle'],
+                'search_query': query,
+                'search_order': order
+            })
+        
+        return pd.DataFrame(videos)
+    
+    except Exception as e:
+        print(f"Error in get_video: {str(e)}")
+        return pd.DataFrame()
+
 
 def get_channel_details(channel_ids):
     """
-    Retrieves channel metadata for one or multiple YouTube channel IDs.
-    Returns a DataFrame with channel details.
+    Retrieve basic channel information for a list of channel IDs.
+    Returns DataFrame with channel metadata.
     """
-    if isinstance(channel_ids, str):
-        channel_ids = [channel_ids]
-    elif not isinstance(channel_ids, list):
-        raise ValueError("channel_ids must be a string or list of strings")
-
-    channels_data = []
-
-    for i in range(0, len(channel_ids), 50):  # YouTube allows max 50 IDs per call
-        ids = ",".join(channel_ids[i:i+50])
-        url = f"{BASE_URL}/channels?part=snippet,statistics&id={ids}&key={API_KEY}"
-        response = requests.get(url)
-        response.raise_for_status()
-        data = response.json()
-
-        # Skip if no valid channels found
-        if "items" not in data or not data["items"]:
-            print(f"No valid data returned for batch: {channel_ids[i:i+50]}")
-            continue
-
-        for item in data["items"]:
-            snippet = item.get("snippet", {})
-            stats = item.get("statistics", {})
-
-            channels_data.append({
-                "channel_id": item.get("id"),
-                "title": snippet.get("title"),
-                "description": snippet.get("description"),
-                "published_at": snippet.get("publishedAt"),
-                "country": snippet.get("country"),
-                "view_count": int(stats.get("viewCount", 0)),
-                "subscriber_count": int(stats.get("subscriberCount", 0)),
-                "video_count": int(stats.get("videoCount", 0))
-            })
-
-    return pd.DataFrame(channels_data)
-
-
-def get_video(query, max_results=20, order="relevance"):
-    """
-    Retrieves YouTube videos for a given search query.
-    Allows controlling the ordering (e.g., relevance, date, viewCount).
-    """
-    search_url = (
-        f"{BASE_URL}/search?part=snippet&q={query}"
-        f"&type=video&maxResults={max_results}&order={order}&key={API_KEY}"
-    )
+    if not channel_ids:
+        return pd.DataFrame()
     
-    response = requests.get(search_url)
-    response.raise_for_status()
-    items = response.json().get("items", [])
+    try:
+        youtube = get_youtube_client()
+        # API accepts max 50 IDs per request
+        all_channels = []
+        for i in range(0, len(channel_ids), 50):
+            batch = channel_ids[i:i+50]
+            response = youtube.channels().list(
+                part="snippet,statistics",
+                id=",".join(batch)
+            ).execute()
 
-    videos = []
-    for item in items:
-        # Safely extract video ID (some items may not have it)
-        video_id = item.get("id", {}).get("videoId")
-        if not video_id:
-            continue  # skip bad or missing items
+            for item in response.get('items', []):
+                snippet = item['snippet']
+                stats = item['statistics']
+                all_channels.append({
+                    'channel_id': item['id'],
+                    'title': snippet['title'],
+                    'description': snippet.get('description'),
+                    'country': snippet.get('country'),
+                    'published_at': snippet['publishedAt'],
+                    'subscriber_count': int(stats.get('subscriberCount', 0)),
+                    'video_count': int(stats.get('videoCount', 0)),
+                    'view_count': int(stats.get('viewCount', 0))
+                })
+        
+        return pd.DataFrame(all_channels)
+    
+    except Exception as e:
+        print(f"Error in get_channel_details: {str(e)}")
+        return pd.DataFrame()
 
-        snippet = item.get("snippet", {})
-        videos.append({
-            "video_id": video_id,
-            "channel_id": snippet.get("channelId"),
-            "title": snippet.get("title"),
-            "description": snippet.get("description"),
-            "published_at": snippet.get("publishedAt"),
-            "search_query": query,
-            "search_order": order
-        })
 
-    return pd.DataFrame(videos)
-
-def get_video_statistics(video_ids: list):
+def get_video_statistics(video_ids):
     """
-    Retrieves detailed statistics and metadata (duration, category, tags) for a list of video IDs.
-    Returns view_count, like_count, favorite_count, comment_count, duration, category_id, and tags.
+    Retrieve engagement metrics for videos.
+    Returns DataFrame with video statistics.
     """
     if not video_ids:
         return pd.DataFrame()
+    
+    try:
+        youtube = get_youtube_client()
+        all_stats = []
+        for i in range(0, len(video_ids), 50):
+            batch = video_ids[i:i+50]
+            response = youtube.videos().list(
+                part="statistics,snippet,contentDetails",
+                id=",".join(batch)
+            ).execute()
 
-    stats_data = []
-    for i in range(0, len(video_ids), 50):  # API allows up to 50 IDs per request
-        ids = ",".join(video_ids[i:i+50])
-        url = f"{BASE_URL}/videos?part=snippet,contentDetails,statistics&id={ids}&key={API_KEY}"
-        response = requests.get(url)
-        response.raise_for_status()
-        for item in response.json().get("items", []):
-            snippet = item.get("snippet", {})
-            content = item.get("contentDetails", {})
-            stats = item.get("statistics", {})
+            for item in response.get('items', []):
+                stats = item['statistics']
+                snippet = item['snippet']
+                details = item['contentDetails']
 
-            stats_data.append({
-                "video_id": item["id"],
-                "category_id": snippet.get("categoryId"),
-                "tags": ",".join(snippet.get("tags", [])) if snippet.get("tags") else None,
-                "duration": content.get("duration"),
-                "view_count": int(stats.get("viewCount", 0)),
-                "like_count": int(stats.get("likeCount", 0)),
-                "favorite_count": int(stats.get("favoriteCount", 0)),
-                "comment_count": int(stats.get("commentCount", 0))
-            })
+                all_stats.append({
+                    'video_id': item['id'],
+                    'category_id': snippet.get('categoryId'),
+                    'duration': details.get('duration'),
+                    'views': int(stats.get('viewCount', 0)),
+                    'likes': int(stats.get('likeCount', 0)),
+                    'comment_count': int(stats.get('commentCount', 0)),
+                    'tags': ','.join(snippet.get('tags', [])) if snippet.get('tags') else None,
+                    'favorite_count': int(stats.get('favoriteCount', 0)),
+                    'collected_at': datetime.utcnow().isoformat()
+                })
+        
+        return pd.DataFrame(all_stats)
+    
+    except Exception as e:
+        print(f"Error in get_video_statistics: {str(e)}")
+        return pd.DataFrame()
 
-    return pd.DataFrame(stats_data)
 
-def get_video_comments(video_id: str, max_results=100):
-    comments = []
-    next_page = None
+def get_video_comments(video_id, max_comments=50):
+    """
+    Retrieve top-level comments for a video.
+    Returns DataFrame with comment data.
+    """
+    if not video_id:
+        return pd.DataFrame()
+    
+    try:
+        youtube = get_youtube_client()
+        comments = []
+        next_page_token = None
+        total_fetched = 0
 
-    while True:
-        url = f"{BASE_URL}/commentThreads?part=snippet&videoId={video_id}&maxResults={max_results}&key={API_KEY}"
-        if next_page:
-            url += f"&pageToken={next_page}"
+        while total_fetched < max_comments:
+            response = youtube.commentThreads().list(
+                part="snippet",
+                videoId=video_id,
+                maxResults=min(100, max_comments - total_fetched),
+                pageToken=next_page_token,
+                textFormat="plainText"
+            ).execute()
 
-        resp = requests.get(url).json()
-        for item in resp.get("items", []):
-            snippet = item["snippet"]["topLevelComment"]["snippet"]
-            comments.append({
-                "comment_id": item["id"],
-                "video_id": video_id,
-                "author_display_name": snippet.get("authorDisplayName"),
-                "text_display": snippet.get("textDisplay"),
-                "like_count": int(snippet.get("likeCount", 0)),
-                "published_at": snippet.get("publishedAt")
-            })
+            for item in response.get("items", []):
+                snippet = item["snippet"]["topLevelComment"]["snippet"]
+                comments.append({
+                    "video_id": video_id,
+                    "comment_id": item["id"],
+                    "author_display_name": snippet.get("authorDisplayName"),
+                    "text_display": snippet.get("textDisplay"),
+                    "like_count": snippet.get("likeCount", 0),
+                    "published_at": snippet.get("publishedAt")
+                })
 
-        next_page = resp.get("nextPageToken")
-        if not next_page:
-            break
+            total_fetched += len(response.get("items", []))
+            next_page_token = response.get("nextPageToken")
 
-    return pd.DataFrame(comments)
+            if not next_page_token:
+                break
+        
+        return pd.DataFrame(comments) if comments else pd.DataFrame()
+    
+    except Exception as e:
+        print(f"Error fetching comments for video {video_id}: {str(e)}")
+        return pd.DataFrame()
+
 
 def get_video_categories(region_code="US"):
-    url = f"{BASE_URL}/videoCategories?part=snippet&regionCode={region_code}&key={API_KEY}"
-    response = requests.get(url)
-    response.raise_for_status()
+    """
+    Retrieve video categories for a specific region.
+    Returns DataFrame mapping category_id to category_name.
+    """
+    try:
+        youtube = get_youtube_client()
+        response = youtube.videoCategories().list(
+            part="snippet",
+            regionCode=region_code
+        ).execute()
 
-    categories = []
-    for item in response.json().get("items", []):
-        snippet = item["snippet"]
-        categories.append({
-            "category_id": item["id"],
-            "title": snippet["title"],
-            "assignable": snippet["assignable"]
-        })
-
-    return pd.DataFrame(categories)
+        categories = []
+        for item in response.get("items", []):
+            snippet = item["snippet"]
+            categories.append({
+                "category_id": item["id"],
+                "title": snippet["title"],
+                "assignable": snippet["assignable"],
+                "region": region_code
+            })
+        
+        return pd.DataFrame(categories)
+    
+    except Exception as e:
+        print(f"Error in get_video_categories: {str(e)}")
+        return pd.DataFrame()

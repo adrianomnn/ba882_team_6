@@ -72,6 +72,7 @@ def task(request):
             like_count INTEGER,
             comment_count INTEGER,
             favorite_count INTEGER,
+            collected_at TIMESTAMP,
             ingest_timestamp TIMESTAMP,
             source_path VARCHAR,
             run_id VARCHAR
@@ -99,6 +100,7 @@ def task(request):
             category_id STRING PRIMARY KEY,
             title STRING,
             assignable BOOLEAN,
+            region VARCHAR,
             ingest_timestamp TIMESTAMP,
             source_path VARCHAR,
             run_id VARCHAR
