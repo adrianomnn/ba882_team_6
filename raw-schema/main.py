@@ -26,6 +26,7 @@ def task(request):
     # Create DB and schema
     md.sql(f"CREATE DATABASE IF NOT EXISTS {db};")
     md.sql(f"CREATE SCHEMA IF NOT EXISTS {db_schema};")
+    print(f"Database and schema ensured: {db_schema}")
 
     # Videos table
     md.sql(f"""

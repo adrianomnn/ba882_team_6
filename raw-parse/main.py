@@ -69,5 +69,7 @@ def task(request):
     if not categories_df.empty:
         md.execute(f"INSERT INTO {db_schema}.categories SELECT * FROM categories_df")
 
+    md.close()
+
     print("Data successfully loaded into MotherDuck.")
     return {}, 200

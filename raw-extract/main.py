@@ -40,10 +40,11 @@ def task(request):
         "channels": channels_df.to_dict(orient="records"),
         "video_stats": stats_df.to_dict(orient="records"),
         "comments": comments_df.to_dict(orient="records") if comments_df is not None else [],
-        "categories": categories_df.to_dict(orient="records")
+        "categories": categories_df.to_dict(orient="records"),
+        "extracted_at": datetime.datetime.utcnow().isoformat()
     }
 
-    json_str = json.dumps(data)
+    json_str = json.dumps(data, default=str)
     date_path = datetime.datetime.utcnow().strftime("%Y%m%d")
     gcs_path = upload_to_gcs(bucket_name, f"raw/youtube/query={query}/date={date_path}", run_id, json_str)
 
