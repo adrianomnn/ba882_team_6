@@ -9,7 +9,7 @@ gcloud config set project adrineto-qst882-fall25
 # Variables
 REGION="us-central1"
 RUNTIME="python312"
-SERVICE_ACCOUNT="ba882-fall25@adrineto-qst882-fall25.iam.gserviceaccount.com"
+SERVICE_ACCOUNT="qst882-fall25@adrineto-qst882-fall25.iam.gserviceaccount.com"
 STAGE_BUCKET="adrineto-ba882-fall25-functions"
 
 # ======================================================
