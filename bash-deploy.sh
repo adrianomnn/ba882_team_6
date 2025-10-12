@@ -6,6 +6,14 @@
 
 gcloud config set project adrineto-qst882-fall25
 
+if [ -z "$YOUTUBE_API_KEY" ]; then
+    echo "ERROR: YOUTUBE_API_KEY environment variable is not set!"
+    echo "Please set it with: export YOUTUBE_API_KEY='your-api-key'"
+    exit 1
+fi
+
+echo "YOUTUBE_API_KEY is set (length: ${#YOUTUBE_API_KEY})"
+
 # Variables
 REGION="us-central1"
 RUNTIME="python312"
@@ -74,5 +82,5 @@ gcloud functions deploy raw-parse \
     --memory 512MB 
 
 echo "======================================================"
-echo "✅ YouTube pipeline deployment completed successfully!"
+echo "YouTube pipeline deployment completed successfully!"
 echo "======================================================"
