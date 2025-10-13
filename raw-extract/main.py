@@ -27,6 +27,23 @@ def task(request):
     channel_ids = videos_df["channel_id"].dropna().unique().tolist()
     channels_df = get_channel_details(channel_ids)
     stats_df = get_video_statistics(videos_df["video_id"].tolist())
+
+    # Extract comments (try multiple videos until we find one with comments enabled)
+    comments_df = None
+    if not videos_df.empty:
+        # Try up to 5 videos to find one with comments enabled
+        for i in range(min(5, len(videos_df))):
+            video_id = videos_df["video_id"].iloc[i]
+            temp_comments = get_video_comments(video_id, max_comments=50)
+            if temp_comments is not None and not temp_comments.empty:
+                comments_df = temp_comments
+                break
+        
+        if comments_df is None or comments_df.empty:
+            comments_df = None
+    else:
+        comments_df = None
+
     if not videos_df.empty:
         comments_df = get_video_comments(videos_df["video_id"].iloc[0])
     else:

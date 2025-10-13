@@ -146,14 +146,13 @@ def get_video_statistics(video_ids):
         print(f"Error in get_video_statistics: {str(e)}")
         return pd.DataFrame()
 
-
 def get_video_comments(video_id, max_comments=50):
     """
     Retrieve top-level comments for a video.
-    Returns DataFrame with comment data.
+    Returns DataFrame with comment data, or None if comments are disabled.
     """
     if not video_id:
-        return pd.DataFrame()
+        return None
     
     try:
         youtube = get_youtube_client()
@@ -178,7 +177,7 @@ def get_video_comments(video_id, max_comments=50):
                     "author_display_name": snippet.get("authorDisplayName"),
                     "text_display": snippet.get("textDisplay"),
                     "like_count": snippet.get("likeCount", 0),
-                    "published_at": snippet.get("publishedAt")
+                    "published_at": snippet.get("publishedAt"),
                 })
 
             total_fetched += len(response.get("items", []))
@@ -187,11 +186,18 @@ def get_video_comments(video_id, max_comments=50):
             if not next_page_token:
                 break
         
-        return pd.DataFrame(comments) if comments else pd.DataFrame()
+        return pd.DataFrame(comments) if comments else None
     
     except Exception as e:
-        print(f"Error fetching comments for video {video_id}: {str(e)}")
-        return pd.DataFrame()
+        error_str = str(e)
+        # Check if comments are disabled (403 error)
+        if "commentsDisabled" in error_str or "403" in error_str:
+            print(f"Comments disabled for video {video_id}")
+            return None
+        else:
+            # Other errors - log but don't crash
+            print(f"Error fetching comments for video {video_id}: {e}")
+            return None
 
 
 def get_video_categories(region_code="US"):
