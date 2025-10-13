@@ -5,3 +5,4 @@ pandas
 google-cloud-bigquery
 pyarrow
 db-dtypes
+google-cloud-secret-manager

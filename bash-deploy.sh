@@ -6,13 +6,14 @@
 
 gcloud config set project adrineto-qst882-fall25
 
-if [ -z "$YOUTUBE_API_KEY" ]; then
-    echo "ERROR: YOUTUBE_API_KEY environment variable is not set!"
-    echo "Please set it with: export YOUTUBE_API_KEY='your-api-key'"
-    exit 1
-fi
+echo "Checking if Secret Manager key exists..."
 
-echo "YOUTUBE_API_KEY is set (length: ${#YOUTUBE_API_KEY})"
+if ! gcloud secrets describe YOUTUBE_API_KEY --project=adrineto-qst882-fall25 > /dev/null 2>&1; then
+    echo "Secret 'YOUTUBE_API_KEY' not found in Secret Manager!"
+    exit 1
+else
+    echo "Secret 'YOUTUBE_API_KEY' found in Secret Manager."
+fi
 
 # Variables
 REGION="us-central1"

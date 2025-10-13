@@ -1,6 +1,5 @@
 """
 YouTube API wrapper functions
-Place this file in raw-extract/ folder
 """
 
 import os
@@ -8,6 +7,12 @@ import pandas as pd
 from googleapiclient.discovery import build
 from datetime import datetime
 from googleapiclient.errors import HttpError
+from google.cloud import secretmanager
+
+# settings
+project_id = 'adrineto-qst882-fall25'
+secret_id = 'YOUTUBE_API_KEY'
+version_id = 'latest'
 
 # Global variable to cache the YouTube client
 _youtube_client = None
@@ -21,7 +26,11 @@ def get_youtube_client():
     global _youtube_client
     
     if _youtube_client is None:
-        API_KEY = os.environ.get('YOUTUBE_API_KEY')
+        sm = secretmanager.SecretManagerServiceClient()
+        name = f"projects/{project_id}/secrets/{secret_id}/versions/{version_id}"
+        response = sm.access_secret_version(request={"name": name})
+        API_KEY = response.payload.data.decode("UTF-8")
+        
         if not API_KEY:
             raise ValueError("YOUTUBE_API_KEY environment variable not set!")
         
