@@ -54,7 +54,6 @@ def get_video(query, max_results=50, order='relevance'):
                 'title': snippet['title'],
                 'description': snippet['description'],
                 'published_at': snippet['publishedAt'],
-                'channel_title': snippet['channelTitle'],
                 'search_query': query,
                 'search_order': order
             })
@@ -90,7 +89,7 @@ def get_channel_details(channel_ids):
                 stats = item['statistics']
                 all_channels.append({
                     'channel_id': item['id'],
-                    'title': snippet['title'],
+                    'channel_title': snippet['title'],
                     'description': snippet.get('description'),
                     'country': snippet.get('country'),
                     'published_at': snippet['publishedAt'],
@@ -133,8 +132,8 @@ def get_video_statistics(video_ids):
                     'video_id': item['id'],
                     'category_id': snippet.get('categoryId'),
                     'duration': details.get('duration'),
-                    'views': int(stats.get('viewCount', 0)),
-                    'likes': int(stats.get('likeCount', 0)),
+                    'view_count': int(stats.get('viewCount', 0)),
+                    'like_count': int(stats.get('likeCount', 0)),
                     'comment_count': int(stats.get('commentCount', 0)),
                     'tags': ','.join(snippet.get('tags', [])) if snippet.get('tags') else None,
                     'favorite_count': int(stats.get('favoriteCount', 0)),
@@ -212,7 +211,7 @@ def get_video_categories(region_code="US"):
             snippet = item["snippet"]
             categories.append({
                 "category_id": item["id"],
-                "title": snippet["title"],
+                "category_title": snippet["title"],
                 "assignable": snippet["assignable"],
                 "region": region_code
             })
