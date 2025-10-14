@@ -68,6 +68,6 @@ def youtube_pipeline():
     schema_result = schema()
     extract_result = extract(schema_result)
     load_result = load(extract_result)
-    transform_result = transform(parse_result)
+    transform_result = transform(load_result)
 
 youtube_pipeline()
