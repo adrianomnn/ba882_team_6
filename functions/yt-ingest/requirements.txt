@@ -1,0 +1,4 @@
+functions-framework==3.*
+google-cloud-secret-manager
+google-cloud-storage
+duckdb==1.3.2
