@@ -83,5 +83,21 @@ gcloud functions deploy raw-parse \
     --memory 512MB 
 
 echo "======================================================"
+echo "Deploying the YouTube data transformer"
+echo "======================================================"
+
+gcloud functions deploy raw-transform \
+    --gen2 \
+    --runtime ${RUNTIME} \
+    --trigger-http \
+    --entry-point task \
+    --source ./raw-transform \
+    --stage-bucket ${STAGE_BUCKET} \
+    --service-account ${SERVICE_ACCOUNT} \
+    --region ${REGION} \
+    --allow-unauthenticated \
+    --memory 512MB 
+
+echo "======================================================"
 echo "YouTube pipeline deployment completed successfully!"
 echo "======================================================"

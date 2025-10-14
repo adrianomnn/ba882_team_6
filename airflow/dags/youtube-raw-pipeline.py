@@ -54,9 +54,20 @@ def youtube_pipeline():
         print("Load Response:", resp)
         return resp
 
+    # STEP 4 - Transform data to BigQuery
+    @task
+    def transform(payload: dict):
+        url = "https://us-central1-adrineto-qst882-fall25.cloudfunctions.net/raw-transform"
+        ctx = get_current_context()
+        payload['date'] = ctx["ds_nodash"]
+        resp = invoke_function(url, data=payload)
+        print("Load Response:", resp)
+        return resp
+
     # Define task dependencies (schema → extract → load)
     schema_result = schema()
     extract_result = extract(schema_result)
     load_result = load(extract_result)
+    transform_result = transform(parse_result)
 
 youtube_pipeline()
