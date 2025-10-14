@@ -29,13 +29,15 @@ def task(request):
             bigquery.SchemaField("channel_description", "STRING"),
             bigquery.SchemaField("last_updated", "TIMESTAMP")
         ],
-        "dim_authors": [
-            bigquery.SchemaField("author_id", "STRING", mode="REQUIRED"),
+        "dim_comments": [
+            bigquery.SchemaField("comment_id", "STRING", mode="REQUIRED"),
             bigquery.SchemaField("author_display_name", "STRING"),
+            bigquery.SchemaField("comment_text", "STRING"),
             bigquery.SchemaField("last_updated", "TIMESTAMP")
         ],
         "fact_video_statistics": [
             bigquery.SchemaField("video_id", "STRING"),
+            bigquery.SchemaField("channel_id", "STRING"),
             bigquery.SchemaField("date", "DATE"),
             bigquery.SchemaField("view_count", "INTEGER"),
             bigquery.SchemaField("like_count", "INTEGER"),
@@ -44,8 +46,6 @@ def task(request):
         "fact_comments": [
             bigquery.SchemaField("comment_id", "STRING", mode="REQUIRED"),
             bigquery.SchemaField("video_id", "STRING"),
-            bigquery.SchemaField("author_id", "STRING"),
-            bigquery.SchemaField("comment_text", "STRING"),
             bigquery.SchemaField("published_at", "TIMESTAMP")
         ],
     }
@@ -63,97 +63,108 @@ def task(request):
 
     # --- Step 2: Run transformations ---
     queries = [
-        # dim_videos
-        """
-        MERGE `adrineto-qst882-fall25.youtube_staging.dim_videos` AS T
-        USING (
-          SELECT DISTINCT
-            video_id,
-            title,
-            description,
-            channel_id,
-            published_at
-          FROM `adrineto-qst882-fall25.youtube_raw.videos`
-        ) AS S
-        ON T.video_id = S.video_id
-        WHEN MATCHED THEN
-          UPDATE SET
-            T.title = S.title,
-            T.description = S.description,
-            T.channel_id = S.channel_id,
-            T.published_at = S.published_at,
-            T.last_updated = CURRENT_TIMESTAMP()
-        WHEN NOT MATCHED THEN
-          INSERT (video_id, title, description, channel_id, published_at, last_updated)
-          VALUES (S.video_id, S.title, S.description, S.channel_id, S.published_at, CURRENT_TIMESTAMP());
-        """,
-        # dim_channels
-        """
-        MERGE `adrineto-qst882-fall25.youtube_staging.dim_channels` AS T
-        USING (
-          SELECT DISTINCT
-            channel_id,
-            channel_title,
-            channel_description
-          FROM `adrineto-qst882-fall25.youtube_raw.channels`
-        ) AS S
-        ON T.channel_id = S.channel_id
-        WHEN MATCHED THEN
-          UPDATE SET
-            T.channel_title = S.channel_title,
-            T.channel_description = S.channel_description,
-            T.last_updated = CURRENT_TIMESTAMP()
-        WHEN NOT MATCHED THEN
-          INSERT (channel_id, channel_title, channel_description, last_updated)
-          VALUES (S.channel_id, S.channel_title, S.channel_description, CURRENT_TIMESTAMP());
-        """,
-        # dim_authors
-        """
-        MERGE `adrineto-qst882-fall25.youtube_staging.dim_authors` AS T
-        USING (
-          SELECT DISTINCT
-            author_id,
-            author_display_name
-          FROM `adrineto-qst882-fall25.youtube_raw.comments`
-        ) AS S
-        ON T.author_id = S.author_id
-        WHEN MATCHED THEN
-          UPDATE SET
-            T.author_display_name = S.author_display_name,
-            T.last_updated = CURRENT_TIMESTAMP()
-        WHEN NOT MATCHED THEN
-          INSERT (author_id, author_display_name, last_updated)
-          VALUES (S.author_id, S.author_display_name, CURRENT_TIMESTAMP());
-        """,
-        # fact_video_statistics
-        """
-        INSERT INTO `adrineto-qst882-fall25.youtube_staging.fact_video_statistics`
-        (video_id, date, view_count, like_count, comment_count)
-        SELECT
-          video_id,
-          CURRENT_DATE() AS date,
-          view_count,
-          like_count,
-          comment_count
-        FROM `adrineto-qst882-fall25.youtube_raw.video_statistics`;
-        """,
-        # fact_comments
-        """
-        MERGE `adrineto-qst882-fall25.youtube_staging.fact_comments` AS T
-        USING (
-          SELECT
-            comment_id,
-            video_id,
-            author_id,
-            text_display AS comment_text,
-            published_at
-          FROM `adrineto-qst882-fall25.youtube_raw.comments`
-        ) AS S
-        ON T.comment_id = S.comment_id
-        WHEN NOT MATCHED THEN
-          INSERT (comment_id, video_id, author_id, comment_text, published_at)
-          VALUES (S.comment_id, S.video_id, S.author_id, S.comment_text, S.published_at);
-        """
+    # dim_videos
+    """
+    MERGE `adrineto-qst882-fall25.youtube_staging.dim_videos` AS T
+    USING (
+      SELECT DISTINCT
+        video_id,
+        title,
+        description,
+        channel_id,
+        published_at
+      FROM `adrineto-qst882-fall25.youtube_raw.videos`
+    ) AS S
+    ON T.video_id = S.video_id
+    WHEN MATCHED THEN
+      UPDATE SET
+        T.title = S.title,
+        T.description = S.description,
+        T.channel_id = S.channel_id,
+        T.published_at = S.published_at,
+        T.last_updated = CURRENT_TIMESTAMP()
+    WHEN NOT MATCHED THEN
+      INSERT (video_id, title, description, channel_id, published_at, last_updated)
+      VALUES (S.video_id, S.title, S.description, S.channel_id, S.published_at, CURRENT_TIMESTAMP());
+    """,
+
+    # dim_channels
+    """
+    MERGE `adrineto-qst882-fall25.youtube_staging.dim_channels` AS T
+    USING (
+      SELECT DISTINCT
+        channel_id,
+        channel_title,
+        channel_description
+      FROM `adrineto-qst882-fall25.youtube_raw.channels`
+    ) AS S
+    ON T.channel_id = S.channel_id
+    WHEN MATCHED THEN
+      UPDATE SET
+        T.channel_title = S.channel_title,
+        T.channel_description = S.channel_description,
+        T.last_updated = CURRENT_TIMESTAMP()
+    WHEN NOT MATCHED THEN
+      INSERT (channel_id, channel_title, channel_description, last_updated)
+      VALUES (S.channel_id, S.channel_title, S.channel_description, CURRENT_TIMESTAMP());
+    """,
+
+    # dim_comments
+    """
+    MERGE `adrineto-qst882-fall25.youtube_staging.dim_comments` AS T
+    USING (
+      SELECT DISTINCT
+        comment_id,
+        author_display_name,
+        text_display AS comment_text
+      FROM `adrineto-qst882-fall25.youtube_raw.comments`
+    ) AS S
+    ON T.comment_id = S.comment_id
+    WHEN MATCHED THEN
+      UPDATE SET
+        T.author_display_name = S.author_display_name,
+        T.comment_text = S.comment_text,
+        T.last_updated = CURRENT_TIMESTAMP()
+    WHEN NOT MATCHED THEN
+      INSERT (comment_id, author_display_name, comment_text, last_updated)
+      VALUES (S.comment_id, S.author_display_name, S.comment_text, CURRENT_TIMESTAMP());
+    """,
+
+    # fact_video_statistics
+    """
+    INSERT INTO `adrineto-qst882-fall25.youtube_staging.fact_video_statistics`
+    (video_id, channel_id, date, view_count, like_count, comment_count)
+    SELECT
+      v.video_id,
+      v.channel_id,
+      CURRENT_DATE() AS date,
+      s.view_count,
+      s.like_count,
+      s.comment_count
+    FROM `adrineto-qst882-fall25.youtube_raw.video_statistics` s
+    JOIN `adrineto-qst882-fall25.youtube_raw.videos` v
+      ON s.video_id = v.video_id;
+    """,
+
+    # fact_comments
+    """
+    MERGE `adrineto-qst882-fall25.youtube_staging.fact_comments` AS T
+    USING (
+      SELECT
+        comment_id,
+        video_id,
+        published_at
+      FROM `adrineto-qst882-fall25.youtube_raw.comments`
+    ) AS S
+    ON T.comment_id = S.comment_id
+    WHEN MATCHED THEN
+      UPDATE SET
+        T.video_id = S.video_id,
+        T.published_at = S.published_at
+    WHEN NOT MATCHED THEN
+      INSERT (comment_id, video_id, published_at)
+      VALUES (S.comment_id, S.video_id, S.published_at);
+    """
     ]
 
     results = []
