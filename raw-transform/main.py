@@ -1,5 +1,5 @@
 """
-Transform raw data into staging tables for YouTube data with incremental merge logic.
+Transform raw data into staging tables for YouTube data with incremental merge logic and deduplication.
 """
 import functions_framework
 from google.cloud import bigquery
@@ -63,20 +63,21 @@ def task(request):
             client.create_table(table)
             print(f"Created table: {table_id}")
 
-    # --- Step 2: Run transformations ---
+    # --- Step 2: Run transformations with deduplication ---
     queries = [
 
     # DIM_VIDEOS
     """
     MERGE `adrineto-qst882-fall25.youtube_staging.dim_videos` AS T
     USING (
-      SELECT DISTINCT
+      SELECT
         video_id,
-        title,
-        description,
-        channel_id,
-        published_at
+        ANY_VALUE(title) AS title,
+        ANY_VALUE(description) AS description,
+        ANY_VALUE(channel_id) AS channel_id,
+        ANY_VALUE(published_at) AS published_at
       FROM `adrineto-qst882-fall25.youtube_raw.videos`
+      GROUP BY video_id
     ) AS S
     ON T.video_id = S.video_id
     WHEN MATCHED THEN
@@ -95,11 +96,12 @@ def task(request):
     """
     MERGE `adrineto-qst882-fall25.youtube_staging.dim_channels` AS T
     USING (
-      SELECT DISTINCT
+      SELECT
         channel_id,
-        channel_title,
-        channel_description
+        ANY_VALUE(channel_title) AS channel_title,
+        ANY_VALUE(channel_description) AS channel_description
       FROM `adrineto-qst882-fall25.youtube_raw.channels`
+      GROUP BY channel_id
     ) AS S
     ON T.channel_id = S.channel_id
     WHEN MATCHED THEN
@@ -116,11 +118,12 @@ def task(request):
     """
     MERGE `adrineto-qst882-fall25.youtube_staging.dim_comments` AS T
     USING (
-      SELECT DISTINCT
+      SELECT
         comment_id,
-        author_display_name,
-        text_display AS comment_text
+        ANY_VALUE(author_display_name) AS author_display_name,
+        ANY_VALUE(text_display) AS comment_text
       FROM `adrineto-qst882-fall25.youtube_raw.comments`
+      GROUP BY comment_id
     ) AS S
     ON T.comment_id = S.comment_id
     WHEN MATCHED THEN
@@ -139,31 +142,50 @@ def task(request):
     USING (
       SELECT
         v.video_id,
-        v.channel_id,
+        ANY_VALUE(v.channel_id) AS channel_id,
         CASE
+          
           WHEN REGEXP_CONTAINS(duration, r'PT\d+H\d+M\d+S') THEN
             CONCAT(
               CAST(REGEXP_EXTRACT(duration, r'PT(\d+)H') AS STRING), ':',
               LPAD(CAST(REGEXP_EXTRACT(duration, r'(\d+)M') AS STRING), 2, '0'), ':',
               LPAD(CAST(REGEXP_EXTRACT(duration, r'(\d+)S') AS STRING), 2, '0')
             )
+
+          WHEN REGEXP_CONTAINS(duration, r'PT\d+H\d+M') THEN
+            CONCAT(
+              CAST(REGEXP_EXTRACT(duration, r'PT(\d+)H') AS STRING), ':',
+              LPAD(CAST(REGEXP_EXTRACT(duration, r'(\d+)M') AS STRING), 2, '0'), ':00'
+            )
+
+          WHEN REGEXP_CONTAINS(duration, r'PT\d+H\d+S') THEN
+            CONCAT(
+              CAST(REGEXP_EXTRACT(duration, r'PT(\d+)H') AS STRING), ':00:',
+              LPAD(CAST(REGEXP_EXTRACT(duration, r'(\d+)S') AS STRING), 2, '0')
+            )
+
           WHEN REGEXP_CONTAINS(duration, r'PT\d+M\d+S') THEN
             CONCAT(
               CAST(REGEXP_EXTRACT(duration, r'PT(\d+)M') AS STRING), ':',
               LPAD(CAST(REGEXP_EXTRACT(duration, r'(\d+)S') AS STRING), 2, '0')
             )
+
+          WHEN REGEXP_CONTAINS(duration, r'PT\d+M') THEN
+            CONCAT(CAST(REGEXP_EXTRACT(duration, r'PT(\d+)M') AS STRING), ':00')
+
           WHEN REGEXP_CONTAINS(duration, r'PT\d+S') THEN
             CONCAT('0:', LPAD(CAST(REGEXP_EXTRACT(duration, r'PT(\d+)S') AS STRING), 2, '0'))
-          ELSE
-            NULL
+
+          ELSE NULL
         END AS duration,
         CURRENT_DATE() AS date,
-        s.view_count,
-        s.like_count,
-        s.comment_count
+        MAX(s.view_count) AS view_count,
+        MAX(s.like_count) AS like_count,
+        MAX(s.comment_count) AS comment_count
       FROM `adrineto-qst882-fall25.youtube_raw.video_statistics` s
       JOIN `adrineto-qst882-fall25.youtube_raw.videos` v
         ON s.video_id = v.video_id
+      GROUP BY v.video_id
     ) AS S
     ON T.video_id = S.video_id AND T.date = S.date
     WHEN MATCHED THEN
@@ -183,10 +205,11 @@ def task(request):
     USING (
       SELECT
         comment_id,
-        video_id,
-        like_count,
-        published_at
+        ANY_VALUE(video_id) AS video_id,
+        MAX(like_count) AS like_count,
+        ANY_VALUE(published_at) AS published_at
       FROM `adrineto-qst882-fall25.youtube_raw.comments`
+      GROUP BY comment_id
     ) AS S
     ON T.comment_id = S.comment_id
     WHEN MATCHED THEN
@@ -208,6 +231,6 @@ def task(request):
 
     return jsonify({
         "status": "success",
-        "message": "Incremental transformations completed successfully",
+        "message": "Incremental transformations with deduplication completed successfully",
         "results": results
     })
