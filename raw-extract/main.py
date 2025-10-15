@@ -19,7 +19,7 @@ def upload_to_gcs(bucket_name, path, run_id, data):
 
 @functions_framework.http
 def task(request):
-    query = request.args.get("query", "Data Engineering")
+    query = request.args.get("query", "NFL")
     run_id = uuid.uuid4().hex[:12]
     print(f"Query: {query}, Run ID: {run_id}")
 
