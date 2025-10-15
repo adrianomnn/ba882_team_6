@@ -156,7 +156,7 @@ def task(request):
             CONCAT('0:', LPAD(CAST(REGEXP_EXTRACT(duration, r'PT(\d+)S') AS STRING), 2, '0'))
           ELSE
             NULL
-        END AS duration
+        END AS duration,
         CURRENT_DATE() AS date,
         s.view_count,
         s.like_count,
