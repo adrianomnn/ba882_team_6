@@ -99,5 +99,21 @@ gcloud functions deploy raw-transform \
     --memory 512MB 
 
 echo "======================================================"
+echo "Deploying the YouTube data golden layer"
+echo "======================================================"
+
+gcloud functions deploy raw-golden \
+    --gen2 \
+    --runtime ${RUNTIME} \
+    --trigger-http \
+    --entry-point task \
+    --source ./raw-golden \
+    --stage-bucket ${STAGE_BUCKET} \
+    --service-account ${SERVICE_ACCOUNT} \
+    --region ${REGION} \
+    --allow-unauthenticated \
+    --memory 512MB 
+
+echo "======================================================"
 echo "YouTube pipeline deployment completed successfully!"
 echo "======================================================"
