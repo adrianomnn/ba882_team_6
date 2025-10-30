@@ -84,7 +84,7 @@ def task(request):
             COUNT(*) AS total_comments,
             0.5 AS avg_sentiment,
             0.5 AS sentiment_stddev,
-            SUM(CASE WHEN sentiment_score > 0 THEN 1 ELSE 0 END) / COUNT(*) AS pct_positive_comments,
+            0.5 AS pct_positive_comments,
             CURRENT_TIMESTAMP() AS last_updated
         FROM `adrineto-qst882-fall25.youtube_staging.dim_comments`
         WHERE sentiment_score IS NOT NULL
