@@ -1,5 +1,6 @@
 from airflow.decorators import dag, task
 from airflow.sensors.external_task import ExternalTaskSensor
+from datetime import datetime
 import requests
 import os
 import json
