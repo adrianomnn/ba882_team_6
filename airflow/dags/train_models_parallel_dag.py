@@ -44,10 +44,11 @@ def youtube_train_models_parallel():
     @task
     def train_random_forest():
         ctx = get_current_context()
+        formatted_date = datetime.strptime(ctx["ds_nodash"], "%Y%m%d").strftime("%Y-%m-%d")
         payload = {
             "algorithm": "random_forest",
             "hyperparameters": MODEL_CONFIGS["random_forest"],
-            "snapshot_date": ctx["ds_nodash"], 
+            "snapshot_date": formatted_date, 
             "limit": 10000,
             "run_id": ctx["dag_run"].run_id,
         }
@@ -58,10 +59,11 @@ def youtube_train_models_parallel():
     @task
     def train_gradient_boosting():
         ctx = get_current_context()
+        formatted_date = datetime.strptime(ctx["ds_nodash"], "%Y%m%d").strftime("%Y-%m-%d")
         payload = {
             "algorithm": "gradient_boosting",
             "hyperparameters": MODEL_CONFIGS["gradient_boosting"],
-            "snapshot_date": ctx["ds_nodash"],
+            "snapshot_date": formatted_date,
             "limit": 10000,
             "run_id": ctx["dag_run"].run_id,
         }
@@ -72,10 +74,11 @@ def youtube_train_models_parallel():
     @task
     def train_logistic_regression():
         ctx = get_current_context()
+        formatted_date = datetime.strptime(ctx["ds_nodash"], "%Y%m%d").strftime("%Y-%m-%d")
         payload = {
             "algorithm": "logistic_regression",
             "hyperparameters": MODEL_CONFIGS["logistic_regression"],
-            "snapshot_date": ctx["ds_nodash"],
+            "snapshot_date": formatted_date,
             "limit": 10000,
             "run_id": ctx["dag_run"].run_id,
         }
