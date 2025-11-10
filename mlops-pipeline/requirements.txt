@@ -1,7 +1,7 @@
-google-cloud-bigquery>=3.13.0
-google-cloud-storage>=2.14.0
-pandas>=2.0.0
-scikit-learn>=1.2.2
-joblib>=1.2.0
-flask>=2.2.5
+flask
+google-cloud-bigquery
+google-cloud-storage
+scikit-learn
+pandas
+joblib
 functions-framework>=3.1.0
