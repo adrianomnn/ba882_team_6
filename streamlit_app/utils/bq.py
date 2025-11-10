@@ -1,67 +1,63 @@
 import json
-from typing import Dict, Optional, Any, List
-
-import pandas as pd
+import collections.abc as cabc  # for Mapping / AttrDict check
+from typing import Optional, Dict
 import streamlit as st
+import pandas as pd
 from google.cloud import bigquery
-from google.api_core.exceptions import NotFound, Forbidden, BadRequest
 from google.oauth2 import service_account
 
+# --- Optional debug expander (you can move this to app.py later) ---
+with st.expander("Debug secrets", expanded=False):
+    st.write("secrets keys:", list(st.secrets.keys()))
+    sa = st.secrets.get("gcp_service_account")
+    st.write("gcp_service_account type:", type(sa).__name__)
+    st.write("gcp_project_id:", st.secrets.get("gcp_project_id"))
+# -------------------------------------------------------------------
 
-def _info_from_exception(e: Exception) -> str:
-    msg = str(e)
-    if isinstance(e, NotFound):
-        return "One or more tables not found. Please ensure required tables exist."
-    if isinstance(e, Forbidden):
-        return "Permission denied for BigQuery resources. Check IAM permissions."
-    if isinstance(e, BadRequest):
-        return "Invalid query. Check SQL and parameters."
-    return msg
-
-
+@st.cache_resource(show_spinner=False)
 def get_bq_client() -> bigquery.Client:
-    try:
-        if hasattr(st, "secrets") and "gcp_service_account" in st.secrets and st.secrets.get("gcp_service_account"):
-            sa_raw = st.secrets["gcp_service_account"]
-            if isinstance(sa_raw, str):
-                info = json.loads(sa_raw)
-            else:
-                info = dict(sa_raw)
-            creds = service_account.Credentials.from_service_account_info(info)
-            project_id = st.secrets.get("gcp_project_id")
-            return bigquery.Client(credentials=creds, project=project_id)
-        # Fall back to ADC
-        return bigquery.Client()
-    except Exception as e:
-        st.info(f"Failed to initialize BigQuery client: {_info_from_exception(e)}")
-        raise
+    """
+    Build a BigQuery client from Streamlit secrets (string JSON or Mapping),
+    falling back to ADC if no secrets are present.
+    """
+    info = st.secrets.get("gcp_service_account", None)
 
+    # If it's a JSON string inside TOML, parse it
+    if isinstance(info, str):
+        info = json.loads(info)
 
-def _to_bq_parameters(params: Dict[str, Any]) -> List[bigquery.ScalarQueryParameter]:
-    bq_params: List[bigquery.ScalarQueryParameter] = []
-    for name, value in params.items():
-        if isinstance(value, bool):
-            typ = "BOOL"
-        elif isinstance(value, int):
-            typ = "INT64"
-        elif isinstance(value, float):
-            typ = "FLOAT64"
-        else:
-            typ = "STRING"
-        bq_params.append(bigquery.ScalarQueryParameter(name, typ, value))
-    return bq_params
+    # Streamlit may return a SecretDict / AttrDict (a Mapping). Coerce to plain dict.
+    if isinstance(info, cabc.Mapping):
+        info = dict(info)
 
+    if isinstance(info, dict):
+        creds = service_account.Credentials.from_service_account_info(info)
+        project_id = st.secrets.get("gcp_project_id") or info.get("project_id")
+        if not project_id:
+            raise RuntimeError("No project_id found in secrets or service account JSON.")
+        return bigquery.Client(project=project_id, credentials=creds)
 
-@st.cache_data(ttl=600, show_spinner=False)
-def run_query(sql: str, params: Optional[Dict[str, Any]] = None) -> pd.DataFrame:
+    # Fallback: Application Default Credentials (env var or gcloud ADC)
+    return bigquery.Client()
+
+@st.cache_data(ttl=600)
+def run_query(sql: str, params: Optional[Dict[str, str]] = None) -> pd.DataFrame:
+    """
+    Run a query and return a DataFrame. Supports optional scalar string params.
+    """
     try:
         client = get_bq_client()
-        job_config = None
         if params:
-            job_config = bigquery.QueryJobConfig(query_parameters=_to_bq_parameters(params))
-        query_job = client.query(sql, job_config=job_config)
-        df = query_job.result().to_dataframe(create_bqstorage_client=False)
-        return df
+            from google.cloud.bigquery import QueryJobConfig, ScalarQueryParameter
+            job_config = QueryJobConfig(
+                query_parameters=[
+                    ScalarQueryParameter(k, "STRING", v) for k, v in params.items()
+                ]
+            )
+            job = client.query(sql, job_config=job_config)
+        else:
+            job = client.query(sql)
+        return job.result().to_dataframe()
     except Exception as e:
-        st.info(f"BigQuery query failed: {_info_from_exception(e)}")
+        st.error(f"BigQuery query failed: {e}")
         return pd.DataFrame()
