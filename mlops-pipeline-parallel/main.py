@@ -152,7 +152,7 @@ def http_entry(request: Request):
         limit = payload.get("limit")
         run_id = payload.get("run_id") or datetime.utcnow().strftime("run_%Y%m%dT%H%M%S")
 
-        df = fetch_golden_features(snapshot_date, limit)
+        df = fetch_golden_features(snapshot_date=None, limit=limit)
         X, y, feature_cols = select_features_and_label(df)
 
         X_train, X_test, y_train, y_test = train_test_split(
