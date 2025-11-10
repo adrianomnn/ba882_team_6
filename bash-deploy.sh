@@ -99,5 +99,21 @@ gcloud functions deploy raw-transform \
     --memory 512MB 
 
 echo "======================================================"
+echo "Deploying the YouTube MLOPs "
+echo "======================================================"
+
+gcloud functions deploy mlops-pipeline \
+    --gen2 \
+    --runtime ${RUNTIME} \
+    --trigger-http \
+    --entry-point task \
+    --source ./mlops-pipeline \
+    --stage-bucket ${STAGE_BUCKET} \
+    --service-account ${SERVICE_ACCOUNT} \
+    --region ${REGION} \
+    --allow-unauthenticated \
+    --memory 512MB 
+
+echo "======================================================"
 echo "YouTube pipeline deployment completed successfully!"
 echo "======================================================"
