@@ -1,6 +1,5 @@
 from airflow.decorators import dag, task
 from airflow.sensors.external_task import ExternalTaskSensor
-from airflow.utils.dates import days_ago
 import requests
 import os
 import json
@@ -15,7 +14,7 @@ def call_cloud_function(url, payload=None):
 
 @dag(
     schedule="@daily",
-    start_date=days_ago(1),
+    start_date=datetime(2025, 11, 10),
     catchup=False,
     tags=["youtube", "mlops"]
 )
