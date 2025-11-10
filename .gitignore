@@ -5,3 +5,4 @@ venv/
 .vscode/
 .idea/
 streamlit_app/.streamlit/secrets.toml
+
