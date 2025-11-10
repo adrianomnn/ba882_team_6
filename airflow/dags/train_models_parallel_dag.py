@@ -28,7 +28,7 @@ def youtube_train_models_parallel():
 
     CLOUD_FUNCTION_URL = os.getenv(
         "TRAIN_MODEL_CLOUD_FUNCTION_URL",
-        "https://us-central1-adrineto-qst882-fall25.cloudfunctions.net/train_model"
+        "https://us-central1-adrineto-qst882-fall25.cloudfunctions.net/mlops-pipeline-parallel"
     )
 
     # Default hyperparameters for each model
