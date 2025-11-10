@@ -4,3 +4,5 @@ venv/
 .ipynb_checkpoints/
 .vscode/
 .idea/
+streamlit_app/.streamlit/secrets.toml
+
