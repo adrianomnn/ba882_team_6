@@ -128,7 +128,7 @@ gcloud functions deploy mlops-pipeline-parallel \
     --service-account ${SERVICE_ACCOUNT} \
     --region ${REGION} \
     --allow-unauthenticated \
-    --memory 512MB
+    --memory 1024MB
 
 echo "======================================================"
 echo "YouTube pipeline deployment completed successfully!"
