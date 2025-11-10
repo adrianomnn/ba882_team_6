@@ -1,6 +1,5 @@
 streamlit>=1.37
 pandas>=2.2
-numpy>=1.26
 google-cloud-bigquery>=3.23
 google-auth>=2.35
 db-dtypes>=1.2
