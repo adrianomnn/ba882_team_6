@@ -115,5 +115,21 @@ gcloud functions deploy mlops-pipeline \
     --memory 512MB
 
 echo "======================================================"
+echo "Deploying the YouTube MLOPs Parallel"
+echo "======================================================"
+
+gcloud functions deploy mlops-pipeline-parallel \
+    --gen2 \
+    --runtime ${RUNTIME} \
+    --trigger-http \
+    --entry-point http_entry \
+    --source ./mlops-pipeline-parallel \
+    --stage-bucket ${STAGE_BUCKET} \
+    --service-account ${SERVICE_ACCOUNT} \
+    --region ${REGION} \
+    --allow-unauthenticated \
+    --memory 512MB
+
+echo "======================================================"
 echo "YouTube pipeline deployment completed successfully!"
 echo "======================================================"

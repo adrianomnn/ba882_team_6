@@ -1,0 +1,8 @@
+flask
+google-cloud-bigquery
+google-cloud-storage
+scikit-learn
+pandas
+joblib
+db-dtypes
+functions-framework>=3.1.0
