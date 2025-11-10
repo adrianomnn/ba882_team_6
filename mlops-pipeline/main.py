@@ -120,24 +120,37 @@ def compute_metrics(model, X_test, y_test):
 
 
 def write_training_metadata_to_bq(metadata: dict):
-    """
-    Append a metadata row to a training_log table
-      dataset.training_runs : run_id STRING, created_at TIMESTAMP, model_gcs_path STRING, metrics JSON
-    """
     dataset = os.getenv("TRAINING_METADATA_DATASET", "youtube_metadata")
     table = os.getenv("TRAINING_METADATA_TABLE", "training_runs")
-
     table_id = f"{PROJECT_ID}.{dataset}.{table}"
-    rows = [
-        {
-            "run_id": metadata.get("run_id"),
-            "created_at": metadata.get("created_at"),
-            "model_gcs_path": metadata.get("model_gcs_path"),
-            "metrics": json.dumps(metadata.get("metrics", {})),
-            "num_rows": metadata.get("num_rows", 0),
-            "features": json.dumps(metadata.get("features", [])),
-        }
+
+    # Define schema for safety
+    schema = [
+        bigquery.SchemaField("run_id", "STRING"),
+        bigquery.SchemaField("created_at", "TIMESTAMP"),
+        bigquery.SchemaField("model_gcs_path", "STRING"),
+        bigquery.SchemaField("metrics", "STRING"),
+        bigquery.SchemaField("num_rows", "INTEGER"),
+        bigquery.SchemaField("features", "STRING"),
     ]
+
+    # Create table if not exists
+    try:
+        bq_client.get_table(table_id)
+    except Exception:
+        table_def = bigquery.Table(table_id, schema=schema)
+        bq_client.create_table(table_def)
+        print(f"Created table {table_id}")
+
+    rows = [{
+        "run_id": metadata.get("run_id"),
+        "created_at": metadata.get("created_at"),
+        "model_gcs_path": metadata.get("model_gcs_path"),
+        "metrics": json.dumps(metadata.get("metrics", {})),
+        "num_rows": metadata.get("num_rows", 0),
+        "features": json.dumps(metadata.get("features", [])),
+    }]
+
     bq_client.insert_rows_json(table_id, rows)
 
 
