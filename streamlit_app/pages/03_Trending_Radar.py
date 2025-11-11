@@ -9,7 +9,7 @@ with st.sidebar:
     min_prob = st.slider("Min trending probability", 0.50, 0.99, 0.80, 0.01)
     model = st.text_input("Filter by model version (optional)")
 
-where = "WHERE p.y_prob >= @minp"
+where = "WHERE p.y_prob >= CAST(@minp AS FLOAT64)"
 params = {"minp": str(min_prob)}
 if model:
     where += " AND p.model_version = @m"
