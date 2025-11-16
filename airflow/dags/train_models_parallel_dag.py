@@ -19,7 +19,7 @@ def invoke_function(url, data=None):
 # DAG Definition
 # ----------------------------------------------------------------
 @dag(
-    schedule=None,  # set to "@daily" or cron if needed
+    schedule="@daily",
     start_date=datetime(2025, 11, 10),
     catchup=False,
     tags=["youtube", "ml", "training"]

@@ -64,10 +64,21 @@ def youtube_pipeline():
         print("Load Response:", resp)
         return resp
 
-    # Define task dependencies (schema → extract → load)
+    # STEP 5 - Create Golden Layer in BigQuery
+    @task
+    def golden(payload: dict):
+        url = "https://golden-layer-61742465280.us-central1.run.app"
+        ctx = get_current_context()
+        payload['date'] = ctx["ds_nodash"]
+        resp = invoke_function(url, data=payload)
+        print("Load Response:", resp)
+        return resp
+
+    # Define task dependencies (schema → extract → load → transform → golden)
     schema_result = schema()
     extract_result = extract(schema_result)
     load_result = load(extract_result)
     transform_result = transform(load_result)
+    golden_result = golden(load_result)
 
 youtube_pipeline()

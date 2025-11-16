@@ -1,6 +1,6 @@
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
+from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, recision_score, recall_score, confusion_matrix, precision_recall_curve, auc
 from sklearn.model_selection import train_test_split
 import json, joblib, io, os, tempfile
 from datetime import datetime
@@ -18,7 +18,7 @@ BQ_DATASET = os.getenv("GOLDEN_DATASET", "youtube_golden")
 BQ_TABLE = os.getenv("GOLDEN_TABLE", "video_features_for_ml_v3_consecutive")
 MODEL_BUCKET = os.getenv("MODEL_BUCKET", "adrineto-ba882-fall25-team-6")
 MODEL_PREFIX = os.getenv("MODEL_PREFIX", "models_parallel/youtube")
-LABEL_COL = os.getenv("LABEL_COL", "is_trending")
+LABEL_COL = os.getenv("LABEL_COL", "is_trending_tomorrow")
 RANDOM_STATE = int(os.getenv("RANDOM_STATE", "42"))
 
 # --- 1. Fetch Data ---
@@ -44,13 +44,20 @@ def fetch_golden_features(date: str = None, limit: int = None) -> pd.DataFrame:
 def select_features_and_label(df: pd.DataFrame):
     candidate_features = [
         "views",
-        "likes",
-        "view_delta_1d",
         "views_lag_1d",
+        "view_delta_1d",
+        "view_delta_pct_1d",
         "view_accel_2d",
+        "likes",
+        "like_delta_1d",
+        "like_rate_t",
         "engagement_rate_t",
         "engagement_growth",
-        "age_bucket"
+        "days_since_publish",
+        "age_bucket",
+        "upload_hour",
+        "upload_weekday"
+        "pr_view_accel_pos"
     ]
 
     features = [c for c in candidate_features if c in df.columns]
@@ -81,11 +88,32 @@ def select_model(algorithm: str, hyperparams: dict):
 # --- 4. Compute Metrics ---
 def compute_metrics(model, X_test, y_test):
     y_pred = model.predict(X_test)
+
+    # Probabilities only if model supports predict_proba
     y_proba = model.predict_proba(X_test)[:, 1] if hasattr(model, "predict_proba") else None
+
+    # PR-AUC (only if probabilities exist)
+    if y_proba is not None:
+        precision_curve, recall_curve, _ = precision_recall_curve(y_test, y_proba)
+        pr_auc = auc(recall_curve, precision_curve)
+    else:
+        pr_auc = None
+
+    # Confusion matrix
+    cm = confusion_matrix(y_test, y_pred)
+    tn, fp, fn, tp = cm.ravel().tolist() if cm.size == 4 else (None, None, None, None)
+
     return {
         "accuracy": accuracy_score(y_test, y_pred),
-        "f1": f1_score(y_test, y_pred),
+        "precision": precision_score(y_test, y_pred, zero_division=0),
+        "recall": recall_score(y_test, y_pred, zero_division=0),
+        "f1": f1_score(y_test, y_pred, zero_division=0),
         "roc_auc": roc_auc_score(y_test, y_proba) if y_proba is not None else None,
+        "pr_auc": pr_auc,
+        "true_positive": tp,
+        "false_positive": fp,
+        "false_negative": fn,
+        "true_negative": tn
     }
 
 
@@ -153,12 +181,25 @@ def http_entry(request: Request):
         run_id = payload.get("run_id") or datetime.utcnow().strftime("run_%Y%m%dT%H%M%S")
 
         df = fetch_golden_features(date=None, limit=limit)
+        # Ensure data sorted by snapshot_date
+        df = df.sort_values("snapshot_date")
         X, y, feature_cols = select_features_and_label(df)
 
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=0.2, random_state=RANDOM_STATE,
-            stratify=y if len(y.unique()) > 1 else None
-        )
+        cutoff = df["snapshot_date"].quantile(0.8)
+        train_idx = df["snapshot_date"] <= cutoff
+        test_idx  = df["snapshot_date"] > cutoff 
+
+        if train_idx.sum() == 0:
+            raise ValueError("Training set is empty — check snapshot_date values.")
+
+        if test_idx.sum() == 0:
+            raise ValueError("Test set is empty — cannot compute metrics.")
+
+        X_train = X.loc[train_idx]
+        y_train = y.loc[train_idx]
+
+        X_test = X.loc[test_idx]
+        y_test = y.loc[test_idx]
 
         model = select_model(algorithm, hyperparams)
         model.fit(X_train, y_train)
