@@ -43,11 +43,35 @@ def invoke_training_function(url: str, payload: dict, timeout: int = 600):
     """
     Call Cloud Function and WAIT for training to complete.
     Uses longer timeout since training takes time.
+    Sends periodic heartbeats to prevent Airflow timeout.
     """
+    import threading
+    import time
+
     try:
         print(f"Invoking training: {payload.get('algorithm')} | {payload.get('run_id')}")
+
+        # Create a flag to stop heartbeat thread
+        training_complete = threading.Event()
+
+        # Heartbeat function - prints every 30 seconds to keep Airflow without errors
+        def send_heartbeat():
+            counter = 0
+            while not training_complete.is_set():
+                time.sleep(30)
+                if not training_complete.is_set():
+                    counter += 30
+                    print(f"Heartbeat: Training still running... ({counter}s elapsed)")
+        
+        # Start heartbeat thread
+        heartbeat_thread = threading.Thread(target=send_heartbeat, daemon=True)
+        heartbeat_thread.start()
         
         resp = requests.post(url, json=payload, timeout=timeout)
+
+        # Stop heartbeat
+        training_complete.set()
+        
         resp.raise_for_status()
         
         result = resp.json()
