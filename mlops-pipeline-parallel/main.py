@@ -185,7 +185,7 @@ def http_entry(request: Request):
         df = df.sort_values("snapshot_date")
         X, y, feature_cols = select_features_and_label(df)
 
-        cutoff = df["snapshot_date"].quantile(0.8)
+        cutoff = df["snapshot_date"].quantile(0.7)
         train_idx = df["snapshot_date"] <= cutoff
         test_idx  = df["snapshot_date"] > cutoff 
 
