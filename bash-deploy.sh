@@ -122,7 +122,7 @@ gcloud functions deploy mlops-pipeline-parallel \
     --gen2 \
     --runtime ${RUNTIME} \
     --trigger-http \
-    --entry-point http_entry \
+    --entry-point train_model \
     --source ./mlops-pipeline-parallel \
     --stage-bucket ${STAGE_BUCKET} \
     --service-account ${SERVICE_ACCOUNT} \
