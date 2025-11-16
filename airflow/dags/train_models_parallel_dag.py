@@ -71,7 +71,7 @@ def invoke_training_function(url: str, payload: dict, timeout: int = 600):
 
         # Stop heartbeat
         training_complete.set()
-        
+
         resp.raise_for_status()
         
         result = resp.json()
@@ -149,19 +149,48 @@ def youtube_train_models_parallel():
         """
         Train a single model configuration.
         This task will be executed in parallel for each config.
+        
+        Returns minimal result to avoid XCom size issues.
         """
+        import sys
+        
+        # Flush output frequently to ensure logs are captured
+        sys.stdout.flush()
+        sys.stderr.flush()
+        
+        print(f"{'='*60}")
+        print(f"Starting training for: {config.get('config_name')}")
+        print(f"Algorithm: {config.get('algorithm')}")
+        print(f"Run ID: {config.get('run_id')}")
+        print(f"{'='*60}")
+        sys.stdout.flush()
+        
         result = invoke_training_function(
             CLOUD_FUNCTION_URL,
             config,
-            timeout=600
+            timeout=600  # 10 minute timeout
         )
         
         # Add config info to result
         result["config_name"] = config.get("config_name")
         result["algorithm"] = config.get("algorithm")
-        result["hyperparameters"] = config.get("hyperparameters")
+        result["run_id"] = config.get("run_id")
         
-        return result
+        # Return minimal result to avoid XCom issues
+        minimal_result = {
+            "status": result.get("status"),
+            "run_id": result.get("run_id"),
+            "config_name": result.get("config_name"),
+            "algorithm": result.get("algorithm"),
+            "metrics": result.get("metrics", {}),
+        }
+        
+        print(f"{'='*60}")
+        print(f"Training completed: {minimal_result.get('status')}")
+        print(f"{'='*60}")
+        sys.stdout.flush()
+        
+        return minimal_result
     
     # ----------------------------------------------------------------
     # Task Graph - Define dependencies
