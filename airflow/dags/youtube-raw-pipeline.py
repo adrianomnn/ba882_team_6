@@ -79,6 +79,6 @@ def youtube_pipeline():
     extract_result = extract(schema_result)
     load_result = load(extract_result)
     transform_result = transform(load_result)
-    golden_result = golden(load_result)
+    golden_result = golden(transform_result)
 
 youtube_pipeline()
