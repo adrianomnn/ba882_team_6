@@ -2,7 +2,7 @@ from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, precision_score, recall_score, confusion_matrix, precision_recall_curve, auc
 from sklearn.model_selection import train_test_split
-import json, joblib, io, os, tempfile
+import json, joblib, io, os, tempfile, threading
 from datetime import datetime
 from google.cloud import bigquery, storage
 from flask import Request, jsonify
