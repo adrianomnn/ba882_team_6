@@ -6,28 +6,18 @@ import os
 import time
 
 # ----------------------------------------------------------------
-# Helper function with timeout + retries + heartbeat-safe logging
+# Helper function to call your deployed Cloud Functions
 # ----------------------------------------------------------------
 def invoke_function(url, data=None):
-    MAX_RETRIES = 3
-    TIMEOUT_SEC = 10  # short timeout to avoid blocking worker
-
-    for attempt in range(1, MAX_RETRIES + 1):
-        try:
-            print(f"[INFO] Calling Cloud Function (attempt {attempt})...")
-            resp = requests.post(url, json=data or {}, timeout=TIMEOUT_SEC)
-            resp.raise_for_status()
-            return resp.json()
-
-        except requests.Timeout:
-            print(f"[WARN] Timeout calling Cloud Function on attempt {attempt}/{MAX_RETRIES}")
-        except Exception as e:
-            print(f"[ERROR] Error calling Cloud Function: {e}")
-
-        time.sleep(2)
-
-    raise RuntimeError("Cloud Function failed after max retries")
-
+    """
+    Trigger Cloud Function asynchronously.
+    Airflow does NOT wait for training to finish.
+    """
+    resp = requests.post(url, json=data or {}, timeout=10)
+    resp.raise_for_status()
+    print("Triggered Cloud Function:", resp.json())
+    return resp.json()
+    
 # ----------------------------------------------------------------
 # DAG Definition
 # ----------------------------------------------------------------

@@ -167,61 +167,58 @@ def write_training_metadata_to_bq(metadata: dict):
     print(f"Metadata written to {table_id} for run_id={metadata['run_id']}")
 
 
-# --- 7. HTTP Entrypoint ---
+# --- 7. Background Training ---
+def run_training_async(payload: dict):
+
+    algorithm = payload.get("algorithm", "random_forest")
+    hyperparams = payload.get("hyperparameters", {})
+    limit = payload.get("limit")
+    snapshot_date = payload.get("snapshot_date")
+    run_id = payload.get("run_id") or datetime.utcnow().strftime("run_%Y%m%dT%H%M%S")
+
+    df = fetch_golden_features(date=None, limit=limit)
+    df = df.sort_values("snapshot_date")
+
+    X, y, feature_cols = select_features_and_label(df)
+
+    # Time-aware split
+    cutoff = df["snapshot_date"].quantile(0.8)
+    train_df = df[df["snapshot_date"] <= cutoff]
+    test_df = df[df["snapshot_date"] > cutoff]
+
+    X_train = X.loc[train_df.index]
+    y_train = y.loc[train_df.index]
+    X_test = X.loc[test_df.index]
+    y_test = y.loc[test_df.index]
+
+    model = select_model(algorithm, hyperparams)
+    model.fit(X_train, y_train)
+
+    metrics = compute_metrics(model, X_test, y_test)
+
+    gcs_path = f"{MODEL_PREFIX}/{run_id}/{algorithm}/model.pkl"
+    full_path = save_model_to_gcs(model, MODEL_BUCKET, gcs_path)
+
+    metadata = {
+        "run_id": run_id,
+        "created_at": datetime.utcnow().isoformat(),
+        "model_gcs_path": full_path,
+        "algorithm": algorithm,
+        "hyperparams": hyperparams,
+        "metrics": metrics,
+        "num_rows": len(df),
+        "features": feature_cols,
+    }
+
+    write_training_metadata_to_bq(metadata)
+
+    print("Training completed:", metadata)
+
+# --- 8. HTTP Entrypoint - Returns Immediately ---
 def http_entry(request: Request):
-    try:
-        payload = {}
-        if request.method == "POST":
-            payload = request.get_json(silent=True) or {}
+    payload = request.get_json(silent=True) or {}
 
-        algorithm = payload.get("algorithm", "random_forest")
-        hyperparams = payload.get("hyperparameters", {})
-        snapshot_date = payload.get("snapshot_date")
-        limit = payload.get("limit")
-        run_id = payload.get("run_id") or datetime.utcnow().strftime("run_%Y%m%dT%H%M%S")
+    thread = threading.Thread(target=run_training_async, args=(payload,))
+    thread.start()
 
-        df = fetch_golden_features(date=None, limit=limit)
-        # Ensure data sorted by snapshot_date
-        df = df.sort_values("snapshot_date")
-        X, y, feature_cols = select_features_and_label(df)
-
-        cutoff = df["snapshot_date"].quantile(0.7)
-        train_idx = df["snapshot_date"] <= cutoff
-        test_idx  = df["snapshot_date"] > cutoff 
-
-        if train_idx.sum() == 0:
-            raise ValueError("Training set is empty — check snapshot_date values.")
-
-        if test_idx.sum() == 0:
-            raise ValueError("Test set is empty — cannot compute metrics.")
-
-        X_train = X.loc[train_idx]
-        y_train = y.loc[train_idx]
-
-        X_test = X.loc[test_idx]
-        y_test = y.loc[test_idx]
-
-        model = select_model(algorithm, hyperparams)
-        model.fit(X_train, y_train)
-        metrics = compute_metrics(model, X_test, y_test)
-
-        gcs_path = f"{MODEL_PREFIX}/{run_id}/{algorithm}/model.pkl"
-        full_gcs_path = save_model_to_gcs(model, MODEL_BUCKET, gcs_path)
-
-        metadata = {
-            "run_id": run_id,
-            "created_at": datetime.utcnow().isoformat(),
-            "model_gcs_path": full_gcs_path,
-            "algorithm": algorithm,
-            "hyperparams": hyperparams,
-            "metrics": metrics,
-            "num_rows": len(df),
-            "features": feature_cols,
-        }
-        write_training_metadata_to_bq(metadata)
-
-        return jsonify({"status": "success", "metadata": metadata}), 200
-
-    except Exception as e:
-        print("Error:", e)
-        return jsonify({"status": "error", "message": str(e)}), 500
+    return jsonify({"status": "training_started"}), 202
