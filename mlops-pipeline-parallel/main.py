@@ -1,47 +1,52 @@
+"""
+ML Training Cloud Function - Async version that returns immediately
+Runs training in background, logs progress to BigQuery
+"""
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, precision_score, recall_score, confusion_matrix, precision_recall_curve, auc
 from sklearn.model_selection import train_test_split
-import json, joblib, io, os, tempfile, threading
+import json, joblib, tempfile, os
 from datetime import datetime
 from google.cloud import bigquery, storage
-from flask import Request, jsonify
+import functions_framework
 import pandas as pd
 import numpy as np
 
 bq_client = bigquery.Client()
 storage_client = storage.Client()
 
-# Config via environment variables
+# Config
 PROJECT_ID = os.getenv("GCP_PROJECT", "adrineto-qst882-fall25")
 BQ_DATASET = os.getenv("GOLDEN_DATASET", "youtube_golden")
 BQ_TABLE = os.getenv("GOLDEN_TABLE", "video_features_for_ml_v3_consecutive")
 MODEL_BUCKET = os.getenv("MODEL_BUCKET", "adrineto-ba882-fall25-team-6")
-MODEL_PREFIX = os.getenv("MODEL_PREFIX", "models_parallel/youtube")
+MODEL_PREFIX = os.getenv("MODEL_PREFIX", "models/youtube")
 LABEL_COL = os.getenv("LABEL_COL", "is_trending_tomorrow")
-RANDOM_STATE = int(os.getenv("RANDOM_STATE", "42"))
+RANDOM_STATE = 42
 
-# --- 1. Fetch Data ---
+
 def fetch_golden_features(date: str = None, limit: int = None) -> pd.DataFrame:
+    """Fetch training data from BigQuery"""
     table_ref = f"`{PROJECT_ID}.{BQ_DATASET}.{BQ_TABLE}`"
+    
     if date:
         sql = f"SELECT * FROM {table_ref} WHERE snapshot_date = @date"
         job_config = bigquery.QueryJobConfig(
             query_parameters=[bigquery.ScalarQueryParameter("date", "DATE", date)]
         )
-        job = bq_client.query(sql, job_config=job_config)
+        df = bq_client.query(sql, job_config=job_config).to_dataframe()
     else:
         sql = f"SELECT * FROM {table_ref}"
-        job = bq_client.query(sql)
-
-    df = job.to_dataframe()
-    if limit:
-        df = df.head(limit)
+        if limit:
+            sql += f" LIMIT {limit}"
+        df = bq_client.query(sql).to_dataframe()
+    
     return df
 
 
-# --- 2. Prepare Features & Label ---
 def select_features_and_label(df: pd.DataFrame):
+    """Prepare features and labels"""
     candidate_features = [
         "views",
         "views_lag_1d",
@@ -56,25 +61,27 @@ def select_features_and_label(df: pd.DataFrame):
         "days_since_publish",
         "age_bucket",
         "upload_hour",
-        "upload_weekday"
+        "upload_weekday",
         "pr_view_accel_pos"
     ]
 
     features = [c for c in candidate_features if c in df.columns]
     label = LABEL_COL
+    
     if label not in df.columns:
-        raise ValueError(f"Label column '{label}' not found in golden table")
+        raise ValueError(f"Label column '{label}' not found")
 
     X = df[features].fillna(0)
     for c in X.columns:
         X[c] = pd.to_numeric(X[c], errors="coerce").fillna(0)
 
     y = pd.to_numeric(df[label], errors="coerce").fillna(0).astype(int)
+    
     return X, y, features
 
 
-# --- 3. Model Selection ---
 def select_model(algorithm: str, hyperparams: dict):
+    """Initialize model based on algorithm"""
     if algorithm == "random_forest":
         return RandomForestClassifier(random_state=RANDOM_STATE, **hyperparams)
     elif algorithm == "gradient_boosting":
@@ -85,14 +92,12 @@ def select_model(algorithm: str, hyperparams: dict):
         raise ValueError(f"Unsupported algorithm: {algorithm}")
 
 
-# --- 4. Compute Metrics ---
 def compute_metrics(model, X_test, y_test):
+    """Compute all evaluation metrics"""
     y_pred = model.predict(X_test)
-
-    # Probabilities only if model supports predict_proba
     y_proba = model.predict_proba(X_test)[:, 1] if hasattr(model, "predict_proba") else None
 
-    # PR-AUC (only if probabilities exist)
+    # PR-AUC
     if y_proba is not None:
         precision_curve, recall_curve, _ = precision_recall_curve(y_test, y_proba)
         pr_auc = auc(recall_curve, precision_curve)
@@ -104,34 +109,39 @@ def compute_metrics(model, X_test, y_test):
     tn, fp, fn, tp = cm.ravel().tolist() if cm.size == 4 else (None, None, None, None)
 
     return {
-        "accuracy": accuracy_score(y_test, y_pred),
-        "precision": precision_score(y_test, y_pred, zero_division=0),
-        "recall": recall_score(y_test, y_pred, zero_division=0),
-        "f1": f1_score(y_test, y_pred, zero_division=0),
-        "roc_auc": roc_auc_score(y_test, y_proba) if y_proba is not None else None,
-        "pr_auc": pr_auc,
-        "true_positive": tp,
-        "false_positive": fp,
-        "false_negative": fn,
-        "true_negative": tn
+        "accuracy": float(accuracy_score(y_test, y_pred)),
+        "precision": float(precision_score(y_test, y_pred, zero_division=0)),
+        "recall": float(recall_score(y_test, y_pred, zero_division=0)),
+        "f1": float(f1_score(y_test, y_pred, zero_division=0)),
+        "roc_auc": float(roc_auc_score(y_test, y_proba)) if y_proba is not None else None,
+        "pr_auc": float(pr_auc) if pr_auc else None,
+        "true_positive": int(tp) if tp is not None else None,
+        "false_positive": int(fp) if fp is not None else None,
+        "false_negative": int(fn) if fn is not None else None,
+        "true_negative": int(tn) if tn is not None else None
     }
 
 
-# --- 5. Save Model to GCS ---
 def save_model_to_gcs(model, bucket_name, object_path):
+    """Save trained model to GCS"""
     bucket = storage_client.bucket(bucket_name)
     blob = bucket.blob(object_path)
-    with tempfile.NamedTemporaryFile(suffix=".pkl") as tmp:
+    
+    with tempfile.NamedTemporaryFile(suffix=".pkl", delete=False) as tmp:
         joblib.dump(model, tmp.name)
         tmp.flush()
         blob.upload_from_filename(tmp.name)
-    return f"gs://{bucket_name}/{object_path}"
+        os.unlink(tmp.name)
+    
+    gcs_path = f"gs://{bucket_name}/{object_path}"
+    print(f"Model saved to {gcs_path}")
+    return gcs_path
 
 
-# --- 6. Write Metadata to BigQuery ---
 def write_training_metadata_to_bq(metadata: dict):
-    dataset = os.getenv("TRAINING_METADATA_DATASET", "youtube_metadata")
-    table = os.getenv("TRAINING_METADATA_TABLE", "training_runs_parallel")
+    """Write training run metadata to BigQuery"""
+    dataset = "youtube_metadata"
+    table = "training_runs_parallel"
     table_id = f"{PROJECT_ID}.{dataset}.{table}"
 
     schema = [
@@ -143,6 +153,8 @@ def write_training_metadata_to_bq(metadata: dict):
         bigquery.SchemaField("metrics", "STRING"),
         bigquery.SchemaField("num_rows", "INTEGER"),
         bigquery.SchemaField("features", "STRING"),
+        bigquery.SchemaField("train_size", "INTEGER"),
+        bigquery.SchemaField("test_size", "INTEGER"),
     ]
 
     # Create table if not exists
@@ -151,74 +163,125 @@ def write_training_metadata_to_bq(metadata: dict):
     except Exception:
         table_def = bigquery.Table(table_id, schema=schema)
         bq_client.create_table(table_def)
-        print(f"Created table {table_id}")
 
     rows = [{
-        "run_id": metadata.get("run_id"),
-        "created_at": metadata.get("created_at"),
-        "model_gcs_path": metadata.get("model_gcs_path"),
-        "algorithm": metadata.get("algorithm"),
+        "run_id": metadata["run_id"],
+        "created_at": metadata["created_at"],
+        "model_gcs_path": metadata["model_gcs_path"],
+        "algorithm": metadata["algorithm"],
         "hyperparams": json.dumps(metadata.get("hyperparams", {})),
         "metrics": json.dumps(metadata.get("metrics", {})),
         "num_rows": metadata.get("num_rows", 0),
         "features": json.dumps(metadata.get("features", [])),
+        "train_size": metadata.get("train_size", 0),
+        "test_size": metadata.get("test_size", 0),
     }]
+    
     bq_client.insert_rows_json(table_id, rows)
     print(f"Metadata written to {table_id} for run_id={metadata['run_id']}")
 
 
-# --- 7. Background Training ---
-def run_training_async(payload: dict):
-
-    algorithm = payload.get("algorithm", "random_forest")
-    hyperparams = payload.get("hyperparameters", {})
-    limit = payload.get("limit")
-    snapshot_date = payload.get("snapshot_date")
-    run_id = payload.get("run_id") or datetime.utcnow().strftime("run_%Y%m%dT%H%M%S")
-
-    df = fetch_golden_features(date=None, limit=limit)
-    df = df.sort_values("snapshot_date")
-
-    X, y, feature_cols = select_features_and_label(df)
-
-    # Time-aware split
-    cutoff = df["snapshot_date"].quantile(0.8)
-    train_df = df[df["snapshot_date"] <= cutoff]
-    test_df = df[df["snapshot_date"] > cutoff]
-
-    X_train = X.loc[train_df.index]
-    y_train = y.loc[train_df.index]
-    X_test = X.loc[test_df.index]
-    y_test = y.loc[test_df.index]
-
-    model = select_model(algorithm, hyperparams)
-    model.fit(X_train, y_train)
-
-    metrics = compute_metrics(model, X_test, y_test)
-
-    gcs_path = f"{MODEL_PREFIX}/{run_id}/{algorithm}/model.pkl"
-    full_path = save_model_to_gcs(model, MODEL_BUCKET, gcs_path)
-
-    metadata = {
-        "run_id": run_id,
-        "created_at": datetime.utcnow().isoformat(),
-        "model_gcs_path": full_path,
-        "algorithm": algorithm,
-        "hyperparams": hyperparams,
-        "metrics": metrics,
-        "num_rows": len(df),
-        "features": feature_cols,
-    }
-
-    write_training_metadata_to_bq(metadata)
-
-    print("Training completed:", metadata)
-
-# --- 8. HTTP Entrypoint - Returns Immediately ---
-def http_entry(request: Request):
-    payload = request.get_json(silent=True) or {}
-
-    thread = threading.Thread(target=run_training_async, args=(payload,))
-    thread.start()
-
-    return jsonify({"status": "training_started"}), 202
+@functions_framework.http
+def train_model(request):
+    """
+    HTTP entry point - Trains model synchronously
+    Returns 200 when complete
+    """
+    start_time = datetime.utcnow()
+    
+    try:
+        payload = request.get_json(silent=True) or {}
+        
+        # Parse parameters
+        algorithm = payload.get("algorithm", "random_forest")
+        hyperparams = payload.get("hyperparameters", {})
+        limit = payload.get("limit")
+        snapshot_date = payload.get("snapshot_date")
+        run_id = payload.get("run_id") or datetime.utcnow().strftime("run_%Y%m%d_%H%M%S")
+        
+        print(f"Starting training: {algorithm} | run_id={run_id}")
+        
+        # 1. Fetch data
+        df = fetch_golden_features(date=None, limit=None)
+        if len(df) == 0:
+            return {"error": "No data found", "status": "failed"}, 400
+        
+        # Sort by date for time-aware split
+        if "snapshot_date" in df.columns:
+            df = df.sort_values("snapshot_date")
+        
+        # 2. Prepare features
+        X, y, feature_cols = select_features_and_label(df)
+        
+        # 3. Time-aware train/test split
+        if "snapshot_date" in df.columns:
+            cutoff = df["snapshot_date"].quantile(0.7)
+            train_mask = df["snapshot_date"] <= cutoff
+            X_train, X_test = X[train_mask], X[~train_mask]
+            y_train, y_test = y[train_mask], y[~train_mask]
+        else:
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, test_size=0.2, random_state=RANDOM_STATE
+            )
+        
+        print(f"Train: {len(X_train)} rows | Test: {len(X_test)} rows")
+        
+        # 4. Train model
+        print(f"Training {algorithm}...")
+        model = select_model(algorithm, hyperparams)
+        model.fit(X_train, y_train)
+        print(f"Training complete")
+        
+        # 5. Evaluate
+        print("Computing metrics...")
+        metrics = compute_metrics(model, X_test, y_test)
+        
+        # 6. Save model
+        gcs_path = f"{MODEL_PREFIX}/{run_id}/{algorithm}/model.pkl"
+        full_path = save_model_to_gcs(model, MODEL_BUCKET, gcs_path)
+        
+        # 7. Save metadata
+        end_time = datetime.utcnow()
+        duration = (end_time - start_time).total_seconds()
+        
+        metadata = {
+            "run_id": run_id,
+            "created_at": start_time.isoformat(),
+            "model_gcs_path": full_path,
+            "algorithm": algorithm,
+            "hyperparams": hyperparams,
+            "metrics": metrics,
+            "num_rows": len(df),
+            "features": feature_cols,
+            "train_size": len(X_train),
+            "test_size": len(X_test),
+        }
+        
+        write_training_metadata_to_bq(metadata)
+        
+        result = {
+            "status": "success",
+            "run_id": run_id,
+            "algorithm": algorithm,
+            "metrics": metrics,
+            "model_path": full_path,
+            "duration_seconds": duration,
+            "num_rows": len(df)
+        }
+        
+        print(f"Training pipeline complete in {duration:.1f}s")
+        print(f"   Accuracy: {metrics['accuracy']:.3f} | F1: {metrics['f1']:.3f}")
+        
+        return result, 200
+        
+    except Exception as e:
+        error_msg = f"Training failed: {str(e)}"
+        print(f"{error_msg}")
+        import traceback
+        traceback.print_exc()
+        
+        return {
+            "status": "failed",
+            "error": str(e),
+            "run_id": locals().get("run_id", "unknown")
+        }, 500
