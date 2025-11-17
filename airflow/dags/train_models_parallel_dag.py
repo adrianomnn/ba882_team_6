@@ -103,7 +103,7 @@ def invoke_training_function(url: str, payload: dict, timeout: int = 600):
     },
     max_active_runs=1,
 )
-def youtube_train_models_parallel():
+def youtube_mlops():
     """
     Train multiple ML models in parallel using dynamic task mapping
     """
@@ -206,3 +206,5 @@ def youtube_train_models_parallel():
 # ----------------------------------------------------------------
 # Instantiate DAG
 # ----------------------------------------------------------------
+
+youtube_mlops()
