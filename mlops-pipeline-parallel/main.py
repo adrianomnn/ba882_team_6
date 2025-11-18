@@ -12,6 +12,7 @@ from google.cloud import bigquery, storage
 import functions_framework
 import pandas as pd
 import numpy as np
+from flask import jsonify
 
 bq_client = bigquery.Client()
 storage_client = storage.Client()
@@ -176,7 +177,7 @@ def train_model(request):
         algorithm = payload.get("algorithm", "random_forest")
         hyperparams = payload.get("hyperparameters", {}) or {}
         limit = payload.get("limit")
-        snapshot_date = payload.get("snapshot_date")  # expect "YYYY-MM-DD" or None
+        snapshot_date = None #payload.get("snapshot_date")  # expect "YYYY-MM-DD" or None
         run_id = payload.get("run_id") or datetime.utcnow().strftime("run_%Y%m%d_%H%M%S")
 
         print(f"Starting training: algorithm={algorithm}, run_id={run_id}, snapshot_date={snapshot_date}")
@@ -205,10 +206,20 @@ def train_model(request):
             train_mask = df["snapshot_date"] <= cutoff_ts
             X_train, X_test = X.loc[train_mask], X.loc[~train_mask]
             y_train, y_test = y.loc[train_mask], y.loc[~train_mask]
+
+            # If one side has only 1 class, fall back to stratified
+            if len(np.unique(y_train)) < 2 or len(np.unique(y_test)) < 2:
+                print("Fallback: insufficient class diversity, using stratified split instead")
+                X_train, X_test, y_train, y_test = train_test_split(
+                    X, y, test_size=0.3,
+                    stratify=y,
+                    random_state=RANDOM_STATE
+                )
+
         else:
             # fallback to standard split when no timestamp variety
             X_train, X_test, y_train, y_test = train_test_split(
-                X, y, test_size=0.2, random_state=RANDOM_STATE, stratify=y if len(np.unique(y)) > 1 else None
+                X, y, test_size=0.3, random_state=RANDOM_STATE, stratify=y if len(np.unique(y)) > 1 else None
             )
 
         # Validate training/test sizes
