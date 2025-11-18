@@ -56,7 +56,7 @@ def invoke_training_function(url: str, payload: dict, timeout: int = 900):
 
 
 @dag(
-    schedule=None, #"@daily"
+    schedule="0 0 */3 * *", 
     start_date=datetime(2025, 11, 10),
     catchup=False,
     tags=["youtube", "ml", "training"],
