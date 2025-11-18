@@ -12,7 +12,7 @@ import json
 # ----------------------------------------------------------------
 CLOUD_FUNCTION_URL = os.getenv(
     "TRAIN_MODEL_CLOUD_FUNCTION_URL",
-    "https://us-central1-adrineto-qst882-fall25.cloudfunctions.net/train_model"
+    "https://us-central1-adrineto-qst882-fall25.cloudfunctions.net/mlops-pipeline-parallel"
 )
 
 MODEL_CONFIGS = [
@@ -72,13 +72,11 @@ def youtube_mlops():
     def prepare_training_metadata():
         ctx = get_current_context()
         dag_run_id = ctx["dag_run"].run_id
-        # Use actual run timestamp as snapshot_date (YYYY-MM-DD)
-        # ctx["ts"] is like "2025-11-16T15:59:00+00:00"
         ts = ctx.get("ts")
         if ts:
             snapshot_date = ts.split("T")[0]
         else:
-            snapshot_date = ctx.get("ds")  # fallback
+            snapshot_date = ctx.get("ds")
         configs = []
         for idx, mc in enumerate(MODEL_CONFIGS):
             run_id = f"{dag_run_id}_{mc['name']}_{idx}"
