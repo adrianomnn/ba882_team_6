@@ -132,5 +132,21 @@ gcloud functions deploy mlops-pipeline-parallel \
     --memory 2048MB \
 
 echo "======================================================"
+echo "Deploying Select Best Model"
+echo "======================================================"
+
+gcloud functions deploy select-best-model \
+    --gen2 \
+    --runtime ${RUNTIME} \
+    --trigger-http \
+    --entry-point task \
+    --source ./select-best-model \
+    --stage-bucket ${STAGE_BUCKET} \
+    --service-account ${SERVICE_ACCOUNT} \
+    --region ${REGION} \
+    --allow-unauthenticated \
+    --memory 512MB 
+
+echo "======================================================"
 echo "YouTube pipeline deployment completed successfully!"
 echo "======================================================"
