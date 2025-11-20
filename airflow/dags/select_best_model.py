@@ -1,8 +1,12 @@
 from airflow.decorators import dag, task
+from airflow.datasets import Dataset
 from datetime import datetime, timedelta
 import requests
 import json
 import os
+
+# Dataset created by youtube_mlops DAG
+TRAINING_COMPLETE = Dataset("gs://mlops/youtube/training_complete")
 
 # URL of your deployed Cloud Function
 CFN_URL = "https://us-central1-adrineto-qst882-fall25.cloudfunctions.net/select-best-model"
@@ -10,7 +14,7 @@ CFN_URL = "https://us-central1-adrineto-qst882-fall25.cloudfunctions.net/select-
 
 @dag(
     start_date=datetime(2025, 1, 1),
-    schedule=None,
+    schedule=[TRAINING_COMPLETE],
     catchup=False,
     tags=["youtube", "ml", "selection"],
     default_args={

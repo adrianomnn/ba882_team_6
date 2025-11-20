@@ -3,11 +3,16 @@ Airflow DAG for parallel ML model training
 Uses dynamic task mapping for true parallelism
 """
 from airflow.decorators import dag, task
+from airflow.datasets import Dataset
 from datetime import datetime, timedelta
 from airflow.operators.python import get_current_context
 import requests
 import os
 import json
+
+# ----------------------------------------------------------------
+# Dataset published when training is done
+TRAINING_COMPLETE = Dataset("gs://mlops/youtube/training_complete")
 
 # ----------------------------------------------------------------
 CLOUD_FUNCTION_URL = os.getenv(
@@ -112,7 +117,16 @@ def youtube_mlops():
         print("---- END TRAIN ----")
         return minimal
 
+    @task(outlets=[TRAINING_COMPLETE])
+    def training_finished_flag():
+        return "OK"
+
+    # ----------------------------------------------------------------------
+    # Dependency Order
+    # ----------------------------------------------------------------------
+
     training_configs = prepare_training_metadata()
     training_results = train_single_model.expand(config=training_configs)
+    training_results >> training_finished_flag()
 
 youtube_mlops()
