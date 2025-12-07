@@ -180,14 +180,14 @@ def task(request):
             ELSE NULL
             END
         ) AS duration,
-        CURRENT_DATE() AS date,
+        DATE(MAX(s.collected_at)) AS date,
         MAX(s.view_count) AS view_count,
         MAX(s.like_count) AS like_count,
         MAX(s.comment_count) AS comment_count
       FROM `adrineto-qst882-fall25.youtube_raw.video_statistics` s
       JOIN `adrineto-qst882-fall25.youtube_raw.videos` v
         ON s.video_id = v.video_id
-      GROUP BY v.video_id
+      GROUP BY v.video_id, DATE(s.collected_at)
     ) AS S
     ON T.video_id = S.video_id AND T.date = S.date
     WHEN MATCHED THEN

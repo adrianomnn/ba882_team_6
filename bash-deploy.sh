@@ -1,9 +1,5 @@
 #!/bin/bash
 
-# ======================================================
-# Configure YOUR project
-# ======================================================
-
 gcloud config set project adrineto-qst882-fall25
 
 echo "Checking if Secret Manager key exists..."
@@ -21,10 +17,6 @@ RUNTIME="python312"
 SERVICE_ACCOUNT="class3demosa@adrineto-qst882-fall25.iam.gserviceaccount.com"
 STAGE_BUCKET="adrineto-ba882-fall25-functions"
 
-# ======================================================
-# Deploy schema setup function
-# ======================================================
-
 echo "======================================================"
 echo "Deploying the YouTube raw schema setup"
 echo "======================================================"
@@ -40,10 +32,6 @@ gcloud functions deploy raw-schema \
     --region ${REGION} \
     --allow-unauthenticated \
     --memory 512MB 
-
-# ======================================================
-# Deploy YouTube data extractor
-# ======================================================
 
 echo "======================================================"
 echo "Deploying the YouTube data extractor"
@@ -61,10 +49,6 @@ gcloud functions deploy raw-extract \
     --allow-unauthenticated \
     --memory 512MB \
     --set-env-vars YOUTUBE_API_KEY=$YOUTUBE_API_KEY
-
-# ======================================================
-# Deploy YouTube data loader (GCS → MotherDuck)
-# ======================================================
 
 echo "======================================================"
 echo "Deploying the YouTube data loader"
@@ -92,6 +76,39 @@ gcloud functions deploy raw-transform \
     --trigger-http \
     --entry-point task \
     --source ./raw-transform \
+    --stage-bucket ${STAGE_BUCKET} \
+    --service-account ${SERVICE_ACCOUNT} \
+    --region ${REGION} \
+    --allow-unauthenticated \
+    --memory 512MB 
+
+echo "======================================================"
+echo "Deploying the YouTube MLOPs Parallel"
+echo "======================================================"
+
+gcloud functions deploy mlops-pipeline-parallel \
+    --gen2 \
+    --runtime ${RUNTIME} \
+    --trigger-http \
+    --entry-point train_model \
+    --source ./mlops-pipeline-parallel \
+    --stage-bucket ${STAGE_BUCKET} \
+    --service-account ${SERVICE_ACCOUNT} \
+    --region ${REGION} \
+    --allow-unauthenticated \
+    --timeout 540s \
+    --memory 2048MB \
+
+echo "======================================================"
+echo "Deploying Select Best Model"
+echo "======================================================"
+
+gcloud functions deploy select-best-model \
+    --gen2 \
+    --runtime ${RUNTIME} \
+    --trigger-http \
+    --entry-point select_and_deploy_best_model \
+    --source ./select-best-model \
     --stage-bucket ${STAGE_BUCKET} \
     --service-account ${SERVICE_ACCOUNT} \
     --region ${REGION} \
